@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI-SOC Analyst | Isolation Forest + Attack Types</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        body {
+            background: linear-gradient(145deg, #0a0f1e 0%, #0b1120 100%);
+            color: #eef2ff;
+            font-family: 'Segoe UI', system-ui;
+        }
+        .navbar { background: #0f172ade; backdrop-filter: blur(8px); border-bottom: 1px solid #334155; }
+        .card { background: rgba(17, 24, 39, 0.8); backdrop-filter: blur(4px); border: 1px solid #2d3a5e; border-radius: 1.5rem; }
+        .stat-number { font-size: 2.2rem; font-weight: 800; background: linear-gradient(135deg, #38bdf8, #a78bfa); -webkit-background-clip: text; background-clip: text; color: transparent; }
+        .attack-badge { border-radius: 2rem; padding: 0.3rem 0.8rem; font-size: 0.7rem; font-weight: bold; display: inline-block; }
+        .critical { background: #b91c1c; }
+        .high { background: #dc2626; }
+        .medium { background: #ea580c; }
+        .low { background: #16a34a; }
+        .footer { font-size: 0.75rem; color: #5b6e8c; text-align: center; margin-top: 2rem; }
+    </style>
+</head>
+<body>
+
+<nav class="navbar px-4 py-2">
+    <span class="navbar-brand h1"><i class="fas fa-robot me-2"></i>AI-SOC Analyst <small class="text-info">(IsolationForest + 5 Attacks)</small></span>
+    <span><i class="fab fa-telegram me-1"></i> Active</span>
+</nav>
+
+<div class="container mt-4">
+    <div class="row g-4 mb-4">
+        <div class="col-md-6">
+            <div class="card p-3 text-center">
+                <i class="fas fa-microchip fa-2x text-primary"></i>
+                <h6>إجمالي الأجهزة</h6>
+                <div class="stat-number" id="totalDevices">0</div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card p-3 text-center">
+                <i class="fas fa-bell fa-2x text-warning"></i>
+                <h6>تنبيهات آخر ساعة</h6>
+                <div class="stat-number text-danger" id="alertsLastHour">0</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header"><i class="fas fa-chart-pie me-2"></i> توزيع أنواع الهجمات (آخر ساعة)</div>
+        <div class="card-body" id="attackBreakdown">-- جاري التحميل --</div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header"><i class="fas fa-skull-crosswalk me-2"></i> الأجهزة المخترقة / الشاذة خلال 10 دقائق</div>
+        <div class="card-body" id="anomalyDevicesList"><div class="text-muted">...</div></div>
+    </div>
+
+    <div class="card">
+        <div class="card-header"><i class="fas fa-list-alt me-2"></i> آخر 50 تنبيهاً</div>
+        <div class="table-responsive">
+            <table class="table table-dark table-hover">
+                <thead><tr><th>الوقت</th><th>الجهاز</th><th>نوع الهجوم</th><th>الخطورة</th><th>الوصف</th></tr></thead>
+                <tbody id="alertsTable"></tbody>
+            </table>
+        </div>
+    </div>
+    <div class="footer">نموذج التعلم: Isolation Forest | قاعدة البيانات: SQLite | أنواع الهجمات: DDoS, Data Exfiltration, Brute Force, Malware, Port Scan</div>
+</div>
+
+<script>
+    function fetchStats() {
+        fetch('/api/stats').then(r=>r.json()).then(d=>{
+            document.getElementById('totalDevices').innerText = d.total_devices;
+            document.getElementById('alertsLastHour').innerText = d.alerts_last_hour;
+            let html = '<div class="row">';
+            for (let [attack, count] of Object.entries(d.attack_breakdown)) {
+                html += `<div class="col-md-2 mb-2"><span class="attack-badge ${attack==='DDoS'?'critical':attack==='Data Exfiltration'?'high':attack==='Malware'?'high':'medium'}">${attack}</span> : ${count}</div>`;
+            }
+            html += '</div>';
+            document.getElementById('attackBreakdown').innerHTML = html || 'لا توجد هجمات بعد';
+        });
+    }
+
+    function fetchAlerts() {
+        fetch('/api/alerts').then(r=>r.json()).then(alerts=>{
+            let tbody = '';
+            alerts.forEach(a=>{
+                let severityClass = a.severity==='Critical'?'critical':a.severity==='High'?'high':a.severity==='Medium'?'medium':'low';
+                tbody += `<tr>
+                    <td>${a.alert_time}</td>
+                    <td>${a.device_id}</td>
+                    <td><span class="attack-badge ${severityClass}">${a.attack_type || 'Unknown'}</span></td>
+                    <td>${a.severity}</td>
+                    <td>${a.description}</td>
+                </tr>`;
+            });
+            document.getElementById('alertsTable').innerHTML = tbody || '<tr><td colspan="5">لا توجد تنبيهات</td></tr>';
+        });
+    }
+
+    function fetchAnomalyDevices() {
+        fetch('/api/anomaly_devices').then(r=>r.json()).then(devs=>{
+            let html = '<ul class="list-group">';
+            devs.forEach(d=>{
+                html += `<li class="list-group-item bg-dark text-light">🚨 ${d.device_id} | <strong>${d.attack_type}</strong> | خطورة: ${d.severity}</li>`;
+            });
+            html += '</ul>';
+            document.getElementById('anomalyDevicesList').innerHTML = html || 'لا توجد أجهزة شاذة حالياً';
+        });
+    }
+
+    setInterval(()=>{ fetchStats(); fetchAlerts(); fetchAnomalyDevices(); }, 5000);
+    fetchStats(); fetchAlerts(); fetchAnomalyDevices();
+</script>
+</body>
+</html>
